@@ -1,0 +1,257 @@
+//***************************************************************************
+//                   attention!!!!                                          *
+//  you have to run at least 4 communicators                                *
+//  the program will use only 4 communicators                               *
+//  but if you run it with more than 4 there will be no problem             *
+//  ***=> "mpiexec -n 4 MPIHello.exe" <=***                                 *
+//***************************************************************************
+#include<bits/stdc++.h>
+#include <mpi.h>
+#include <omp.h>  
+using namespace std;
+#pragma comment(lib,"msmpi.lib")
+//customed data type to store a string and its edit Dist
+struct Pair
+{
+    int x = 0;
+    char* str = NULL;
+    Pair() {
+        x = 0;
+        str = new char;
+    }
+    Pair(int x, char* str) :x(x), str(str) {}
+
+    bool operator<(const Pair& pair) const {
+        if (x == pair.x)
+            return str < pair.str;
+        return x < pair.x;
+    }
+};
+int editDistDP(string str1, string str2, int m, int n) {
+    // Create a table to store results of subproblems
+    vector<vector<int>>dp(m + 1, vector<int>(n + 1));
+    // Fill d[][] in bottom up manner
+    for (int i = 0; i <= m; i++) {
+        for (int j = 0; j <= n; j++) {
+            // If first string is empty, only option is to
+            // insert all characters of second string
+            if (i == 0)
+                dp[i][j] = j; // Min. operations = j
+
+            // If second string is empty, only option is to
+            // remove all characters of second string
+            else if (j == 0)
+                dp[i][j] = i; // Min. operations = i
+
+            // If last characters are same, ignore last char
+            // and recur for remaining string
+            else if (str1[i - 1] == str2[j - 1])
+                dp[i][j] = dp[i - 1][j - 1];
+
+            // If the last character is different, consider
+            // all possibilities and find the minimum
+            else
+                dp[i][j] = 1
+                + min({ dp[i][j - 1], // Insert
+                    dp[i - 1][j], // Remove
+                    dp[i - 1][j - 1] }); // Replace
+        }
+    }
+
+    return dp[m][n];
+}
+
+//using openmp function to get answer for the each
+vector <Pair> getAns(char* str, char** data_base, int data_base_size, const int thread_count) {
+    vector <Pair>ret;
+    if (str == NULL || str == "" || data_base_size == 0)
+        return ret;
+#pragma omp parallel for num_threads(thread_count)
+    for (int i = 0; i < data_base_size; i++) {
+#       pragma omp critical
+        ret.push_back(Pair(editDistDP(str, data_base[i], strlen(str), strlen(data_base[i])), data_base[i]));
+    }
+    sort(ret.begin(), ret.end());
+    // if data base size is less than 10 return the ret size else return the smallest 10 strings
+    return  vector <Pair>(ret.begin(), ret.begin() + min(10, (int)ret.size()));
+}
+
+vector<vector<Pair>>getFinalRes(char** queries, char** data_base, int queries_size, int data_base_size, const int thread_count) {
+    vector<vector<Pair>> res(queries_size);
+#pragma omp parallel for num_threads(thread_count)
+    for (int i = 0; i < queries_size; i++) {
+#       pragma omp critical
+        res[i] = getAns(queries[i], data_base, data_base_size, thread_count);
+    }
+    return res;
+}
+
+// this function takes one array and split it to 2 separated arrayes
+void split(char** to_split, char** arr1, char** arr2, int sz) {
+    for (int i = 0; i < sz / 2; i++) {
+        arr1[i] = to_split[i];
+    }
+    for (int i = sz / 2, j = 0; i < sz; i++, j++) {
+        arr2[j] = to_split[i];
+    }
+}
+int main(int argc, char* argv[]) {
+    int world_id, world_numprocs;
+    int color, broad_val = 1, comm_id, comm_numproces;
+    const int DATABASE_SIZE = 20;
+    const int QUERIES_SIZE = 20;
+    const int MY_DATABASE_SIZE = DATABASE_SIZE / 2;
+    const int MY_QUERIES_SIZE = QUERIES_SIZE / 2;
+    const int THREAD_COUNT = 5;
+    MPI_Comm New_Comm;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_numprocs);
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_id);
+    color = world_id % 2;
+    MPI_Comm_split(MPI_COMM_WORLD, color, world_id, &New_Comm);
+    MPI_Comm_rank(New_Comm, &comm_id);
+    MPI_Comm_size(New_Comm, &comm_numproces);
+    char** data_base = new char* [DATABASE_SIZE];
+    char** queries = new char* [QUERIES_SIZE];
+    char** first_half_queries = new char* [MY_QUERIES_SIZE];
+    char** second_half_queries = new char* [MY_QUERIES_SIZE];
+    char* my_queries[MY_QUERIES_SIZE];
+    char* my_data_base[MY_DATABASE_SIZE];
+    if (world_id == 0) {
+        //data base
+        data_base[0] = (char*)"hello";
+        data_base[1] = (char*)"my";
+        data_base[2] = (char*)"name";
+        data_base[3] = (char*)"is";
+        data_base[4] = (char*)"mohamed";
+        data_base[5] = (char*)"ahmed";
+        data_base[6] = (char*)"hassan";
+        data_base[7] = (char*)"shehata";
+        data_base[8] = (char*)"iam";
+        data_base[9] = (char*)"from";
+        data_base[10] = (char*)"qina";
+        data_base[11] = (char*)"and";
+        data_base[12] = (char*)"iam";
+        data_base[13] = (char*)"astudent";
+        data_base[14] = (char*)"at";
+        data_base[15] = (char*)"faculty";
+        data_base[16] = (char*)"of";
+        data_base[17] = (char*)"computer";
+        data_base[18] = (char*)"science";
+        data_base[19] = (char*)"cs";
+
+        //queries
+        queries[0] = (char*)"hello";
+        queries[1] = (char*)"my";
+        queries[2] = (char*)"name";
+        queries[3] = (char*)"is";
+        queries[4] = (char*)"mahmoud";
+        queries[5] = (char*)"morad";
+        queries[6] = (char*)"abdalkreem";
+        queries[7] = (char*)"khaled";
+        queries[8] = (char*)"iam";
+        queries[9] = (char*)"from";
+        queries[10] = (char*)"sohag";
+        queries[11] = (char*)"and";
+        queries[12] = (char*)"iam";
+        queries[13] = (char*)"astudent";
+        queries[14] = (char*)"at";
+        queries[15] = (char*)"faculty";
+        queries[16] = (char*)"of";
+        queries[17] = (char*)"engineereing";
+        queries[18] = (char*)"bower";
+        queries[19] = (char*)"is";
+
+
+        //split the queries to 2 halves
+        split(queries, first_half_queries, second_half_queries, QUERIES_SIZE);
+
+        //copy queries from first_half_queries to my_queries
+        copy(first_half_queries, first_half_queries + MY_QUERIES_SIZE, my_queries);
+
+        //send the second the half queries to the second communicator
+        MPI_Send(second_half_queries, (MY_QUERIES_SIZE) * sizeof(MPI_CHAR), MPI_CHAR, 1, 0, MPI_COMM_WORLD);
+
+        //send the second half of queries to the second node in the same communicator
+        MPI_Send(my_queries, (MY_QUERIES_SIZE) * sizeof(MPI_CHAR), MPI_CHAR, 1, 0, New_Comm);
+
+        // send the whole database to the second communicator which it's root is process 1
+        MPI_Send(data_base, (DATABASE_SIZE + 1) * sizeof(MPI_CHAR), MPI_CHAR, 1, 0, MPI_COMM_WORLD);
+    }
+    else if (world_id == 1) {
+        //recive the queries from the first communicator root
+        MPI_Recv(my_queries, (MY_QUERIES_SIZE) * sizeof(MPI_CHAR), MPI_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        //send the second half of queries to the second node in the same communicator
+        MPI_Send(my_queries, (MY_QUERIES_SIZE) * sizeof(MPI_CHAR), MPI_CHAR, 1, 0, New_Comm);
+
+        //recive the database from the first communicator root
+        MPI_Recv(data_base, (DATABASE_SIZE + 1) * sizeof(MPI_CHAR), MPI_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+
+    // if my world_id is more than 1 so i am not a root in the communicator
+    if (world_id > 1 && world_id < 4) {
+        //recive the queries from the communicator root
+        MPI_Recv(my_queries, (MY_QUERIES_SIZE) * sizeof(MPI_CHAR), MPI_CHAR, 0, 0, New_Comm, MPI_STATUS_IGNORE);
+    }
+
+    if (world_id < 4) {
+        // scatter the database among the nodes of the communicator
+        MPI_Scatter(data_base, (MY_DATABASE_SIZE) * sizeof(MPI_CHAR), MPI_CHAR, my_data_base, (MY_DATABASE_SIZE) * sizeof(MPI_CHAR), MPI_CHAR, 0, New_Comm);
+        //for each query in my_queries get the best 10 edit distance in the data base
+        auto my_ans = getFinalRes(my_queries, my_data_base, MY_QUERIES_SIZE, MY_DATABASE_SIZE, THREAD_COUNT);
+        vector<vector<Pair>>finalQueriesAns;
+        if (comm_id == 0) {
+            //recive the anwer of the second node in the communicator and merge it to my aswers
+            for (int i = 0; i < MY_QUERIES_SIZE; i++) {
+                Pair* temp = new Pair[my_ans[i].size()];
+                MPI_Recv(temp, my_ans[i].size() * sizeof Pair, MPI_CHAR, 1, 0, New_Comm, MPI_STATUSES_IGNORE);
+                vector<Pair>to_merge = vector<Pair>(temp, temp + my_ans[i].size());
+                //merge
+                my_ans[i].insert(my_ans[i].end(), to_merge.begin(), to_merge.end());
+                sort(my_ans[i].begin(), my_ans[i].end());
+                //remove until the size is equal to 10
+                while (my_ans[i].size() > 10) {
+                    my_ans[i].pop_back();
+                }
+            }
+            if (world_id == 0) {
+                for (int i = 0; i < MY_QUERIES_SIZE; i++) {
+                    finalQueriesAns.push_back(my_ans[i]);
+                }
+                for (int i = 0; i < MY_QUERIES_SIZE; i++) {
+                    Pair* temp = new Pair[my_ans[i].size()];
+                    MPI_Recv(temp, my_ans[i].size() * sizeof Pair, MPI_CHAR, 1, 0, MPI_COMM_WORLD, MPI_STATUSES_IGNORE);
+                    finalQueriesAns.push_back(vector<Pair>(temp, temp + my_ans[i].size()));
+                }
+
+                //print the answer
+                for (int i = 0; i < QUERIES_SIZE; i++) {
+                    cout << "The best edit distances for the query \"" << queries[i] << "\" is => ";
+                    bool flag = false;
+                    for (auto it : finalQueriesAns[i]) {
+                        if (flag)
+                            cout << ',';
+                        flag = true;
+                        cout << '[' << it.x << " : " << it.str << ']';
+                    }
+                    cout << endl;
+                }
+            }
+            else {
+                for (int i = 0; i < MY_QUERIES_SIZE; i++) {
+                    MPI_Send(&my_ans[i][0], my_ans[i].size() * sizeof Pair, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+                }
+            }
+        }
+        else {
+            //send my anwer to the root of the communicator
+            for (int i = 0; i < MY_QUERIES_SIZE; i++) {
+                MPI_Send(&my_ans[i][0], my_ans[i].size() * sizeof Pair, MPI_CHAR, 0, 0, New_Comm);
+            }
+        }
+    }
+    MPI_Finalize();
+
+    return 0;
+}
